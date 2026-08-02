@@ -16,40 +16,6 @@ warnings.filterwarnings('ignore')
 
 def tab_correlacoes(da, dw):
     st.header("🧠 Correlações & Impacto")
-
-    def _safe_polyfit(x, y, deg, default=None):
-        """Polyfit que não dá erro"""
-        try:
-            x_clean = pd.to_numeric(x, errors='coerce').dropna().values
-            y_clean = pd.to_numeric(y, errors='coerce').dropna().values
-            if len(x_clean) < deg + 1 or len(y_clean) < deg + 1:
-                return default or [0] * (deg + 1)
-            return np.polyfit(x_clean, y_clean, deg)
-        except Exception as e:
-            return default or [0] * (deg + 1)
-    
-    def _safe_corr(x, y):
-        """Correlação que não dá erro"""
-        try:
-            x_clean = pd.to_numeric(x, errors='coerce').dropna()
-            y_clean = pd.to_numeric(y, errors='coerce').dropna()
-            if len(x_clean) < 3 or len(y_clean) < 3:
-                return 0.0
-            return float(x_clean.corr(y_clean))
-        except:
-            return 0.0
-    
-    def _safe_linspace(val_min, val_max, num=50):
-        """Linspace seguro"""
-        try:
-            v_min = float(val_min) if not pd.isna(val_min) else 0
-            v_max = float(val_max) if not pd.isna(val_max) else 1
-            if v_min >= v_max:
-                v_max = v_min + 1
-            return np.linspace(v_min, v_max, num)
-        except:
-            return np.linspace(0, 1, num)
-
     st.caption("Análise sobre todo o histórico disponível — independente do filtro de período do sidebar.")
     if len(da) == 0 or len(dw) == 0: st.warning("Sem dados suficientes."); return
 
@@ -537,9 +503,9 @@ def tab_correlacoes(da, dw):
             if len(m_cl) >= 3:
                 r_val, _ = pearsonr(m_cl['rpe_avg'].astype(float),
                                     m_cl['hrv'].astype(float))
-                xr = np.linspace(float(pd.to_numeric(m_cl['rpe_avg'], errors='coerce').dropna().min() or 0),
-                                 float(pd.to_numeric(m_cl['rpe_avg'], errors='coerce').dropna().max() or 1), 50)
-                z  = _safe_polyfit(m_cl['rpe_avg'].astype(float),
+                xr = np.linspace(float(m_cl['rpe_avg'].min()),
+                                 float(m_cl['rpe_avg'].max()), 50)
+                z  = np.polyfit(m_cl['rpe_avg'].astype(float),
                                 m_cl['hrv'].astype(float), 1)
                 fig_sc1 = go.Figure()
                 fig_sc1.add_trace(go.Scatter(
@@ -564,8 +530,8 @@ def tab_correlacoes(da, dw):
             dw3 = dw[['hrv','rhr']].dropna()
             if len(dw3) >= 5:
                 r2   = float(dw3['hrv'].astype(float).corr(dw3['rhr'].astype(float)))
-                xr2  = np.linspace(float(pd.to_numeric(dw3['hrv'], errors='coerce').dropna().min() or 0), float(pd.to_numeric(dw3['hrv'], errors='coerce').dropna().max() or 1), 50)
-                z2   = _safe_polyfit(dw3['hrv'].astype(float), dw3['rhr'].astype(float), 1)
+                xr2  = np.linspace(float(dw3['hrv'].min()), float(dw3['hrv'].max()), 50)
+                z2   = np.polyfit(dw3['hrv'].astype(float), dw3['rhr'].astype(float), 1)
                 fig_sc2 = go.Figure()
                 fig_sc2.add_trace(go.Scatter(
                     x=dw3['hrv'].tolist(), y=dw3['rhr'].tolist(),
@@ -614,8 +580,8 @@ def tab_correlacoes(da, dw):
             _d = _kj_hrv[['kj', col_v]].dropna()
             if len(_d) < 5: continue
             _r, _ = _pr_kj(_d['kj'].astype(float), _d[col_v].astype(float))
-            _z  = _safe_polyfit(_d['kj'].astype(float), _d[col_v].astype(float), 1)
-            _xr = np.linspace(float(pd.to_numeric(_d['kj'], errors='coerce').dropna().min() or 0), float(pd.to_numeric(_d['kj'], errors='coerce').dropna().max() or 1), 50)
+            _z  = np.polyfit(_d['kj'].astype(float), _d[col_v].astype(float), 1)
+            _xr = np.linspace(float(_d['kj'].min()), float(_d['kj'].max()), 50)
             _fig_kj = go.Figure()
             _fig_kj.add_trace(go.Scatter(
                 x=_d['kj'].tolist(), y=_d[col_v].tolist(), mode='markers',
@@ -1061,7 +1027,8 @@ def tab_correlacoes(da, dw):
                           "🌊 Load Ecology", "📊 Lag Longo (14–35d)"])
     _dw_clean_adv = _prep_dw_clean(dw)
     _dw_idx_adv   = _dw_clean_adv.set_index('Data')['hrv']
-    _base_hrv_adv = float(_dw_clean_adv['hrv'].mean())
+    _base_hrv_mean = pd.to_numeric(_dw_clean_adv['hrv'], errors='coerce').dropna()
+    _base_hrv_adv = float(_base_hrv_mean.mean()) if len(_base_hrv_mean) > 0 else 1.0
 
     # HRV multi-lag no merged_rpe
     _mr_ml = merged_rpe.copy() if len(merged_rpe) >= 10 else pd.DataFrame()
@@ -1089,7 +1056,8 @@ def tab_correlacoes(da, dw):
                 for _k in _lag_days:
                     v = sub_c[f'hrv_lag{_k}'].dropna()
                     if len(v) >= 3:
-                        delta = (v.mean() - _base_hrv_adv) / _base_hrv_adv * 100
+                        v_mean = float(pd.to_numeric(v, errors='coerce').mean()) if len(v) > 0 else 0.0
+                        delta = (v_mean - _base_hrv_adv) / (_base_hrv_adv if _base_hrv_adv != 0 else 1) * 100
                         _ys.append(delta)
                         row_ml[f't+{_k}d'] = f"{delta:+.1f}%"
                     else:
@@ -1161,7 +1129,8 @@ def tab_correlacoes(da, dw):
                     for _k in _er_lags:
                         v = sub_er[f'hrv_lag{_k}'].dropna()
                         if len(v) >= 3:
-                            delta = (v.mean() - _base_hrv_adv) / _base_hrv_adv * 100
+                            v_mean = float(pd.to_numeric(v, errors='coerce').mean()) if len(v) > 0 else 0.0
+                            delta = (v_mean - _base_hrv_adv) / (_base_hrv_adv if _base_hrv_adv != 0 else 1) * 100
                             _ys_er.append(delta); row_er[f't+{_k}d'] = f"{delta:+.1f}%"
                         else:
                             _ys_er.append(None); row_er[f't+{_k}d'] = '—'
