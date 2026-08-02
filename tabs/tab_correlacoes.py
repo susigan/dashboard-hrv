@@ -14,20 +14,42 @@ sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))
 
 warnings.filterwarnings('ignore')
 
-
-def _safe_polyfit_wrapper(x_vals, y_vals, deg):
-    """Polyfit seguro que retorna None se falhar"""
-    try:
-        x_clean = pd.to_numeric(x_vals, errors='coerce').dropna()
-        y_clean = pd.to_numeric(y_vals, errors='coerce').dropna()
-        if len(x_clean) < deg+1:
-            return None
-        return np.polyfit(x_clean, y_clean, deg)
-    except:
-        return None
-
 def tab_correlacoes(da, dw):
     st.header("🧠 Correlações & Impacto")
+
+    def _safe_polyfit(x, y, deg, default=None):
+        """Polyfit que não dá erro"""
+        try:
+            x_clean = pd.to_numeric(x, errors='coerce').dropna().values
+            y_clean = pd.to_numeric(y, errors='coerce').dropna().values
+            if len(x_clean) < deg + 1 or len(y_clean) < deg + 1:
+                return default or [0] * (deg + 1)
+            return np.polyfit(x_clean, y_clean, deg)
+        except Exception as e:
+            return default or [0] * (deg + 1)
+    
+    def _safe_corr(x, y):
+        """Correlação que não dá erro"""
+        try:
+            x_clean = pd.to_numeric(x, errors='coerce').dropna()
+            y_clean = pd.to_numeric(y, errors='coerce').dropna()
+            if len(x_clean) < 3 or len(y_clean) < 3:
+                return 0.0
+            return float(x_clean.corr(y_clean))
+        except:
+            return 0.0
+    
+    def _safe_linspace(val_min, val_max, num=50):
+        """Linspace seguro"""
+        try:
+            v_min = float(val_min) if not pd.isna(val_min) else 0
+            v_max = float(val_max) if not pd.isna(val_max) else 1
+            if v_min >= v_max:
+                v_max = v_min + 1
+            return np.linspace(v_min, v_max, num)
+        except:
+            return np.linspace(0, 1, num)
+
     st.caption("Análise sobre todo o histórico disponível — independente do filtro de período do sidebar.")
     if len(da) == 0 or len(dw) == 0: st.warning("Sem dados suficientes."); return
 
@@ -515,10 +537,10 @@ def tab_correlacoes(da, dw):
             if len(m_cl) >= 3:
                 r_val, _ = pearsonr(m_cl['rpe_avg'].astype(float),
                                     m_cl['hrv'].astype(float))
-                xr = np.linspace(float(pd.to_numeric(m_cl['rpe_avg'], errors='coerce').min()),
-                                 float(pd.to_numeric(m_cl['rpe_avg'], errors='coerce').max()), 50)
-                z  = _safe_polyfit_wrapper(m_cl['rpe_avg'].astype(float), m_cl['hrv'].astype(float), 1)
-                if z is None: z = [0, 0]  # fallback
+                xr = np.linspace(float(pd.to_numeric(m_cl['rpe_avg'], errors='coerce').dropna().min() or 0),
+                                 float(pd.to_numeric(m_cl['rpe_avg'], errors='coerce').dropna().max() or 1), 50)
+                z  = _safe_polyfit(m_cl['rpe_avg'].astype(float),
+                                m_cl['hrv'].astype(float), 1)
                 fig_sc1 = go.Figure()
                 fig_sc1.add_trace(go.Scatter(
                     x=m_cl['rpe_avg'].tolist(), y=m_cl['hrv'].tolist(),
@@ -542,9 +564,8 @@ def tab_correlacoes(da, dw):
             dw3 = dw[['hrv','rhr']].dropna()
             if len(dw3) >= 5:
                 r2   = float(dw3['hrv'].astype(float).corr(dw3['rhr'].astype(float)))
-                xr2  = np.linspace(float(pd.to_numeric(dw3['hrv'], errors='coerce').min()), float(pd.to_numeric(dw3['hrv'], errors='coerce').max()), 50)
-                z2   = _safe_polyfit_wrapper(dw3['hrv'].astype(float), dw3['rhr'].astype(float), 1)
-                if z2 is None: z2 = [0, 0]  # fallback
+                xr2  = np.linspace(float(pd.to_numeric(dw3['hrv'], errors='coerce').dropna().min() or 0), float(pd.to_numeric(dw3['hrv'], errors='coerce').dropna().max() or 1), 50)
+                z2   = _safe_polyfit(dw3['hrv'].astype(float), dw3['rhr'].astype(float), 1)
                 fig_sc2 = go.Figure()
                 fig_sc2.add_trace(go.Scatter(
                     x=dw3['hrv'].tolist(), y=dw3['rhr'].tolist(),
@@ -593,8 +614,8 @@ def tab_correlacoes(da, dw):
             _d = _kj_hrv[['kj', col_v]].dropna()
             if len(_d) < 5: continue
             _r, _ = _pr_kj(_d['kj'].astype(float), _d[col_v].astype(float))
-            _z  = np.polyfit(_d['kj'].astype(float), _d[col_v].astype(float), 1)
-            _xr = np.linspace(float(_d['kj'].min()), float(_d['kj'].max()), 50)
+            _z  = _safe_polyfit(_d['kj'].astype(float), _d[col_v].astype(float), 1)
+            _xr = np.linspace(float(pd.to_numeric(_d['kj'], errors='coerce').dropna().min() or 0), float(pd.to_numeric(_d['kj'], errors='coerce').dropna().max() or 1), 50)
             _fig_kj = go.Figure()
             _fig_kj.add_trace(go.Scatter(
                 x=_d['kj'].tolist(), y=_d[col_v].tolist(), mode='markers',
