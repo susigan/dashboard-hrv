@@ -1847,13 +1847,36 @@ def tab_correlacoes(da, dw):
              for df in _all_dl_final],
             ignore_index=True
         )
-        st.download_button(
-            "📥 Download consolidado completo (CSV — todas as análises)",
-            _df_consolidado.to_csv(index=False, sep=';', decimal=',').encode('utf-8'),
-            "atheltica_correlacoes_completo.csv",
-            "text/csv",
-            key="dl_corr_all"
-        )
+        col_dl, col_save = st.columns(2)
+        with col_dl:
+            st.download_button(
+                "📥 Download consolidado completo (CSV — todas as análises)",
+                _df_consolidado.to_csv(index=False, sep=';', decimal=',').encode('utf-8'),
+                "atheltica_correlacoes_completo.csv",
+                "text/csv",
+                key="dl_corr_all"
+            )
+        with col_save:
+            if st.button("💾 Guardar no Drive", key="btn_save_corr_drive"):
+                try:
+                    from utils.drive_db_correlacoes import save_correlacoes_rpe
+                    resultado = save_correlacoes_rpe(
+                        data_treino=str(datetime.now().date()),
+                        modalidade="Multi",
+                        rpe_categoria="Análise",
+                        rpe_valor=0.0,
+                        hrv_baseline=float(merged_rpe['hrv'].mean()) if len(merged_rpe) > 0 else 0,
+                        hrv_lags={'lag1':0,'lag2':0,'lag3':0,'lag4':0,'lag5':0,'lag7':0},
+                        delta_pcts={'delta1':0,'delta2':0,'delta3':0,'delta4':0,'delta5':0,'delta7':0},
+                        n_samples=len(_df_consolidado),
+                        notas="Guardado da tab correlacoes"
+                    )
+                    if resultado:
+                        st.success("✅ Guardado no Drive!")
+                    else:
+                        st.error("❌ Erro")
+                except Exception as e:
+                    st.error(f"❌ {str(e)[:50]}")
     else:
         if len(merged_rpe) > 0:
             st.download_button(
