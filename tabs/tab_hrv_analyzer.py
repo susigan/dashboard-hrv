@@ -2276,8 +2276,8 @@ Confidence = nº de sinais alinhados na mesma direcção (0-5).
                         if st.button("💾 Guardar no Drive", key="btn_save_hrv_drive"):
                             try:
                                 from utils.drive_db_hrv_analyzer import save_hrv_daily_analysis
-                                if len(dw) > 0:
-                                    data_w = dw.iloc[-1]
+                                if len(_dw_all) > 0:
+                                    data_w = _dw_all.iloc[-1]
                                     resultado = save_hrv_daily_analysis(
                                         data_wellness=str(data_w.get('Data', datetime.now().date())),
                                         hrv=float(data_w.get('hrv', 0) or 0),
