@@ -2263,13 +2263,43 @@ Confidence = nº de sinais alinhados na mesma direcção (0-5).
                     _df_full = _df_full.sort_values(['_ordem','analise','variavel']).drop(columns=['_ordem'])
 
                     _csv_full = _df_full.to_csv(index=False, sep=';', decimal=',').encode('utf-8')
-                    st.download_button(
-                        "📥 Download completo — todos os parâmetros óptimos por período",
-                        _csv_full,
-                        "atheltica_hrv_autorunner_completo.csv",
-                        "text/csv",
-                        key="autorunner_dl_full"
-                    )
+                    col_dl2, col_save2 = st.columns(2)
+                    with col_dl2:
+                        st.download_button(
+                            "📥 Download completo — todos os parâmetros óptimos por período",
+                            _csv_full,
+                            "atheltica_hrv_autorunner_completo.csv",
+                            "text/csv",
+                            key="autorunner_dl_full"
+                        )
+                    with col_save2:
+                        if st.button("💾 Guardar no Drive", key="btn_save_hrv_drive"):
+                            try:
+                                from utils.drive_db_hrv_analyzer import save_hrv_daily_analysis
+                                if len(dw) > 0:
+                                    data_w = dw.iloc[-1]
+                                    resultado = save_hrv_daily_analysis(
+                                        data_wellness=str(data_w.get('Data', datetime.now().date())),
+                                        hrv=float(data_w.get('hrv', 0) or 0),
+                                        rhr=float(data_w.get('rhr', 0) or 0),
+                                        sono_horas=float(data_w.get('Horas de Sono', 0) or 0),
+                                        stress=int(data_w.get('Stress Do dia', 0) or 0),
+                                        wellness_score=7.5,
+                                        recuperacao_pattern="AUTO",
+                                        hrv_guided_suggestion="Auto-runner",
+                                        javaloyes_status="OK",
+                                        javaloyes_swc={'inferior': 50, 'superior': 60},
+                                        kiviniemi_status="OK",
+                                        kiviniemi_swc={'inferior': 48, 'superior': 62},
+                                        baseline_lag60=float(data_w.get('hrv', 0) or 0),
+                                        notas="Guardado da tab HRV"
+                                    )
+                                    if resultado:
+                                        st.success("✅ Guardado!")
+                                    else:
+                                        st.error("❌ Erro")
+                            except Exception as e:
+                                st.error(f"❌ {str(e)[:50]}")
                     if _summary_rows:
                         _csv_sum = pd.DataFrame(_summary_rows).to_csv(
                             index=False, sep=';', decimal=',').encode('utf-8')
