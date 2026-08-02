@@ -1,5 +1,6 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # utils/drive_db_correlacoes.py — Guardar análises de correlacoes no Drive DB
+# Versão 2: Usa IDs diretos dos ficheiros (não pasta)
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os, io, sqlite3, streamlit as st, pandas as pd
@@ -9,9 +10,9 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from google.oauth2.service_account import Credentials
 
 # ── CONFIGURAÇÃO ──────────────────────────────────────────────────────────────
-_DB_NAME     = "correlacoes.db"
-_LOCAL_DB    = f"/tmp/{_DB_NAME}"
-_FOLDER_ID   = "11oXQPkFrG6ZBCsvjDqb8RAiE_VfwBSfV"  # ← SUBSTITUIR PELO TEU FOLDER_ID
+_DB_NAME         = "correlacoes.db"
+_LOCAL_DB        = f"/tmp/{_DB_NAME}"
+_DB_FILE_ID      = "1K2c3Xl77XIqf7AYpnXn4fzqWfLE99CVf"  # ← ID direto do ficheiro
 _DRIVE_SCOPES = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive",
@@ -19,84 +20,96 @@ _DRIVE_SCOPES = [
 
 def _drive_svc():
     """Conexão ao Google Drive"""
-    creds = Credentials.from_service_account_info(
-        dict(st.secrets["gcp_service_account"]), scopes=_DRIVE_SCOPES)
-    return build("drive", "v3", credentials=creds)
-
-def _find_db_id(svc) -> str | None:
-    """Procura o DB no Drive"""
     try:
-        r = svc.files().list(
-            q=f"name='{_DB_NAME}' and '{_FOLDER_ID}' in parents and trashed=false",
-            fields="files(id)",
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-        ).execute()
-        files = r.get("files", [])
-        return files[0]["id"] if files else None
-    except:
+        creds = Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]), scopes=_DRIVE_SCOPES)
+        return build("drive", "v3", credentials=creds)
+    except Exception as e:
+        st.error(f"Erro ao conectar ao Drive: {e}")
         return None
 
 def _init_correlacoes_db():
     """Inicializa DB com tabelas"""
-    conn = sqlite3.connect(_LOCAL_DB)
-    conn.executescript("""
-    CREATE TABLE IF NOT EXISTS correlacoes_rpe (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        saved_at TEXT, data_treino TEXT, modalidade TEXT,
-        rpe_categoria TEXT, rpe_valor REAL,
-        hrv_baseline REAL, hrv_lag1 REAL, hrv_lag2 REAL, hrv_lag3 REAL,
-        hrv_lag4 REAL, hrv_lag5 REAL, hrv_lag7 REAL,
-        delta_lag1_pct REAL, delta_lag2_pct REAL, delta_lag3_pct REAL,
-        delta_lag4_pct REAL, delta_lag5_pct REAL, delta_lag7_pct REAL,
-        n_samples INTEGER, notas TEXT);
-    CREATE TABLE IF NOT EXISTS correlacoes_kj (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        saved_at TEXT, data_treino TEXT, modalidade TEXT,
-        kj_valor REAL, kj_quartil TEXT,
-        hrv_baseline REAL, hrv_lag1 REAL, hrv_lag2 REAL, hrv_lag3 REAL,
-        hrv_lag4 REAL, hrv_lag5 REAL, hrv_lag7 REAL,
-        delta_lag1_pct REAL, delta_lag2_pct REAL, delta_lag3_pct REAL,
-        delta_lag4_pct REAL, delta_lag5_pct REAL, delta_lag7_pct REAL,
-        n_samples INTEGER, notas TEXT);
-    """)
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(_LOCAL_DB)
+        c = conn.cursor()
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS correlacoes_rpe (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            saved_at TEXT, data_treino TEXT, modalidade TEXT,
+            rpe_categoria TEXT, rpe_valor REAL,
+            hrv_baseline REAL, hrv_lag1 REAL, hrv_lag2 REAL, hrv_lag3 REAL,
+            hrv_lag4 REAL, hrv_lag5 REAL, hrv_lag7 REAL,
+            delta_lag1_pct REAL, delta_lag2_pct REAL, delta_lag3_pct REAL,
+            delta_lag4_pct REAL, delta_lag5_pct REAL, delta_lag7_pct REAL,
+            n_samples INTEGER, notas TEXT);
+        CREATE TABLE IF NOT EXISTS correlacoes_kj (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            saved_at TEXT, data_treino TEXT, modalidade TEXT,
+            kj_valor REAL, kj_quartil TEXT,
+            hrv_baseline REAL, hrv_lag1 REAL, hrv_lag2 REAL, hrv_lag3 REAL,
+            hrv_lag4 REAL, hrv_lag5 REAL, hrv_lag7 REAL,
+            delta_lag1_pct REAL, delta_lag2_pct REAL, delta_lag3_pct REAL,
+            delta_lag4_pct REAL, delta_lag5_pct REAL, delta_lag7_pct REAL,
+            n_samples INTEGER, notas TEXT);
+        CREATE TABLE IF NOT EXISTS correlacoes_tipo_kj (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            saved_at TEXT, data_treino TEXT, modalidade TEXT,
+            tipo_atividade TEXT, kj_quartil TEXT,
+            hrv_baseline REAL, hrv_lag1 REAL, hrv_lag2 REAL, hrv_lag3 REAL,
+            hrv_lag4 REAL, hrv_lag5 REAL, hrv_lag7 REAL,
+            delta_lag1_pct REAL, delta_lag2_pct REAL, delta_lag3_pct REAL,
+            delta_lag4_pct REAL, delta_lag5_pct REAL, delta_lag7_pct REAL,
+            n_samples INTEGER, notas TEXT);
+        """)
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao inicializar DB: {e}")
+        return False
 
 def _upload_correlacoes_db() -> bool:
-    """Upload do DB para Drive"""
+    """Upload do DB para Drive usando ID direto"""
     if not os.path.exists(_LOCAL_DB):
+        st.warning("Ficheiro local não existe")
         return False
     try:
         svc = _drive_svc()
-        file_id = _find_db_id(svc)
+        if not svc:
+            return False
+        
         media = MediaFileUpload(_LOCAL_DB, mimetype="application/x-sqlite3", resumable=False)
-        if file_id:
-            svc.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
-        else:
-            svc.files().create(
-                body={"name": _DB_NAME, "parents": [_FOLDER_ID]},
-                media_body=media, supportsAllDrives=True, fields="id").execute()
+        svc.files().update(
+            fileId=_DB_FILE_ID,
+            media_body=media,
+            supportsAllDrives=True,
+        ).execute()
+        st.success("✅ DB atualizado no Drive!")
         return True
-    except:
+    except Exception as e:
+        st.error(f"Erro ao fazer upload: {e}")
         return False
 
 def _download_correlacoes_db() -> bool:
-    """Download do DB do Drive"""
+    """Download do DB do Drive usando ID direto"""
     try:
         svc = _drive_svc()
-        file_id = _find_db_id(svc)
-        if file_id:
-            req = svc.files().get_media(fileId=file_id, supportsAllDrives=True)
-            with open(_LOCAL_DB, "wb") as f:
-                dl = MediaIoBaseDownload(f, req)
-                done = False
-                while not done:
-                    _, done = dl.next_chunk()
-    except:
-        pass
-    _init_correlacoes_db()
-    return True
+        if not svc:
+            return False
+        
+        req = svc.files().get_media(fileId=_DB_FILE_ID, supportsAllDrives=True)
+        with open(_LOCAL_DB, "wb") as f:
+            dl = MediaIoBaseDownload(f, req)
+            done = False
+            while not done:
+                _, done = dl.next_chunk()
+        
+        st.success("✅ DB carregado do Drive!")
+        return True
+    except Exception as e:
+        st.warning(f"Download falhou, usando DB local: {e}")
+        return False
 
 def get_correlacoes_conn() -> sqlite3.Connection:
     """Retorna conexão SQLite"""
@@ -124,20 +137,20 @@ def save_correlacoes_rpe(data_treino: str, modalidade: str, rpe_categoria: str,
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now().strftime("%Y-%m-%d %H:%M"),
-            data_treino, modalidade, rpe_categoria, rpe_valor,
-            hrv_baseline,
-            hrv_lags.get('lag1'), hrv_lags.get('lag2'), hrv_lags.get('lag3'),
-            hrv_lags.get('lag4'), hrv_lags.get('lag5'), hrv_lags.get('lag7'),
-            delta_pcts.get('delta1'), delta_pcts.get('delta2'), delta_pcts.get('delta3'),
-            delta_pcts.get('delta4'), delta_pcts.get('delta5'), delta_pcts.get('delta7'),
+            data_treino, modalidade, rpe_categoria, float(rpe_valor) if rpe_valor else 0,
+            float(hrv_baseline) if hrv_baseline else 0,
+            float(hrv_lags.get('lag1', 0) or 0), float(hrv_lags.get('lag2', 0) or 0),
+            float(hrv_lags.get('lag3', 0) or 0), float(hrv_lags.get('lag4', 0) or 0),
+            float(hrv_lags.get('lag5', 0) or 0), float(hrv_lags.get('lag7', 0) or 0),
+            float(delta_pcts.get('delta1', 0) or 0), float(delta_pcts.get('delta2', 0) or 0),
+            float(delta_pcts.get('delta3', 0) or 0), float(delta_pcts.get('delta4', 0) or 0),
+            float(delta_pcts.get('delta5', 0) or 0), float(delta_pcts.get('delta7', 0) or 0),
             n_samples, notas
         ))
         conn.commit()
         conn.close()
         
-        # Upload para Drive
-        _upload_correlacoes_db()
-        return True
+        return _upload_correlacoes_db()
     except Exception as e:
         st.error(f"Erro ao guardar correlacoes_rpe: {e}")
         return False
@@ -159,19 +172,20 @@ def save_correlacoes_kj(data_treino: str, modalidade: str, kj_valor: float,
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now().strftime("%Y-%m-%d %H:%M"),
-            data_treino, modalidade, kj_valor, kj_quartil,
-            hrv_baseline,
-            hrv_lags.get('lag1'), hrv_lags.get('lag2'), hrv_lags.get('lag3'),
-            hrv_lags.get('lag4'), hrv_lags.get('lag5'), hrv_lags.get('lag7'),
-            delta_pcts.get('delta1'), delta_pcts.get('delta2'), delta_pcts.get('delta3'),
-            delta_pcts.get('delta4'), delta_pcts.get('delta5'), delta_pcts.get('delta7'),
+            data_treino, modalidade, float(kj_valor) if kj_valor else 0, kj_quartil,
+            float(hrv_baseline) if hrv_baseline else 0,
+            float(hrv_lags.get('lag1', 0) or 0), float(hrv_lags.get('lag2', 0) or 0),
+            float(hrv_lags.get('lag3', 0) or 0), float(hrv_lags.get('lag4', 0) or 0),
+            float(hrv_lags.get('lag5', 0) or 0), float(hrv_lags.get('lag7', 0) or 0),
+            float(delta_pcts.get('delta1', 0) or 0), float(delta_pcts.get('delta2', 0) or 0),
+            float(delta_pcts.get('delta3', 0) or 0), float(delta_pcts.get('delta4', 0) or 0),
+            float(delta_pcts.get('delta5', 0) or 0), float(delta_pcts.get('delta7', 0) or 0),
             n_samples, notas
         ))
         conn.commit()
         conn.close()
         
-        _upload_correlacoes_db()
-        return True
+        return _upload_correlacoes_db()
     except Exception as e:
         st.error(f"Erro ao guardar correlacoes_kj: {e}")
         return False
